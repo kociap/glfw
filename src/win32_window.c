@@ -242,7 +242,7 @@ static void applyAspectRatio(_GLFWwindow* window, int edge, RECT* area)
 //
 static void updateCursorImage(_GLFWwindow* window)
 {
-    if (window->cursorMode == GLFW_CURSOR_NORMAL)
+    if (window->cursorMode == GLFW_CURSOR_NORMAL || window->cursorMode == GLFW_CURSOR_CAPTURED)
     {
         if (window->cursor)
             SetCursor(window->cursor->win32.handle);
@@ -251,22 +251,6 @@ static void updateCursorImage(_GLFWwindow* window)
     }
     else
         SetCursor(NULL);
-}
-
-// Updates the cursor clip rect
-//
-static void updateClipRect(_GLFWwindow* window)
-{
-    if (window)
-    {
-        RECT clipRect;
-        GetClientRect(window->win32.handle, &clipRect);
-        ClientToScreen(window->win32.handle, (POINT*) &clipRect.left);
-        ClientToScreen(window->win32.handle, (POINT*) &clipRect.right);
-        ClipCursor(&clipRect);
-    }
-    else
-        ClipCursor(NULL);
 }
 
 // Enables WM_INPUT messages for the mouse for the specified window
@@ -295,6 +279,22 @@ static void disableRawMouseMotion(_GLFWwindow* window)
     }
 }
 
+// Apply captured cursor mode to a focused window
+//
+static void captureCursor(_GLFWwindow* window) {
+    RECT clientRect = {};
+    GetClientRect(window->win32.handle, &clientRect);
+    ClientToScreen(window->win32.handle, (POINT*)&clientRect.left);
+    ClientToScreen(window->win32.handle, (POINT*)&clientRect.right);
+    ClipCursor(&clientRect);
+    _glfw.win32.capturedCursorWindow = window;
+}
+
+static void releaseCursor(_GLFWwindow* window) {
+    ClipCursor(NULL);
+    _glfw.win32.capturedCursorWindow = NULL;
+}
+
 // Apply disabled cursor mode to a focused window
 //
 static void disableCursor(_GLFWwindow* window)
@@ -305,7 +305,7 @@ static void disableCursor(_GLFWwindow* window)
                               &_glfw.win32.restoreCursorPosY);
     updateCursorImage(window);
     _glfwCenterCursorInContentArea(window);
-    updateClipRect(window);
+    captureCursor(window);
 
     if (window->rawMouseMotion)
         enableRawMouseMotion(window);
@@ -319,7 +319,7 @@ static void enableCursor(_GLFWwindow* window)
         disableRawMouseMotion(window);
 
     _glfw.win32.disabledCursorWindow = NULL;
-    updateClipRect(NULL);
+    releaseCursor(window);
     _glfwPlatformSetCursorPos(window,
                               _glfw.win32.restoreCursorPosX,
                               _glfw.win32.restoreCursorPosY);
@@ -646,6 +646,8 @@ static LRESULT CALLBACK windowProc(HWND hWnd, UINT uMsg,
             {
                 if (window->cursorMode == GLFW_CURSOR_DISABLED)
                     disableCursor(window);
+                else if(window->cursorMode == GLFW_CURSOR_CAPTURED)
+                    captureCursor(window);
 
                 window->win32.frameAction = GLFW_FALSE;
             }
@@ -662,8 +664,10 @@ static LRESULT CALLBACK windowProc(HWND hWnd, UINT uMsg,
             if (window->win32.frameAction)
                 break;
 
-            if (window->cursorMode == GLFW_CURSOR_DISABLED)
+            if (window->cursorMode == GLFW_CURSOR_DISABLED) 
                 disableCursor(window);
+            else if(window->cursorMode == GLFW_CURSOR_CAPTURED)
+                captureCursor(window);
 
             return 0;
         }
@@ -672,6 +676,8 @@ static LRESULT CALLBACK windowProc(HWND hWnd, UINT uMsg,
         {
             if (window->cursorMode == GLFW_CURSOR_DISABLED)
                 enableCursor(window);
+            else if(window->cursorMode == GLFW_CURSOR_CAPTURED)
+                releaseCursor(window);
 
             if (window->monitor && window->autoIconify)
                 _glfwPlatformIconifyWindow(window);
@@ -955,6 +961,8 @@ static LRESULT CALLBACK windowProc(HWND hWnd, UINT uMsg,
             //       resizing the window or using the window menu
             if (window->cursorMode == GLFW_CURSOR_DISABLED)
                 enableCursor(window);
+            else if(window->cursorMode == GLFW_CURSOR_CAPTURED)
+                releaseCursor(window);
 
             break;
         }
@@ -969,6 +977,8 @@ static LRESULT CALLBACK windowProc(HWND hWnd, UINT uMsg,
             //       resizing the window or using the menu
             if (window->cursorMode == GLFW_CURSOR_DISABLED)
                 disableCursor(window);
+            else if(window->cursorMode == GLFW_CURSOR_CAPTURED)
+                captureCursor(window);
 
             break;
         }
@@ -2026,15 +2036,23 @@ void _glfwPlatformSetCursorPos(_GLFWwindow* window, double xpos, double ypos)
 
 void _glfwPlatformSetCursorMode(_GLFWwindow* window, int mode)
 {
-    if (mode == GLFW_CURSOR_DISABLED)
-    {
-        if (_glfwPlatformWindowFocused(window))
+    if(_glfwPlatformWindowFocused(window)) {
+        if(mode == GLFW_CURSOR_DISABLED) {
             disableCursor(window);
+        } else if(_glfw.win32.disabledCursorWindow == window) {
+            enableCursor(window);
+        }
+
+        if(mode == GLFW_CURSOR_CAPTURED) {
+            captureCursor(window);
+        } else if(_glfw.win32.capturedCursorWindow == window) {
+            releaseCursor(window);
+        }
     }
-    else if (_glfw.win32.disabledCursorWindow == window)
-        enableCursor(window);
-    else if (cursorInContentArea(window))
+
+    if(cursorInContentArea(window)) {
         updateCursorImage(window);
+    }
 }
 
 const char* _glfwPlatformGetScancodeName(int scancode)
