@@ -991,7 +991,10 @@ static LRESULT CALLBACK windowProc(HWND hWnd, UINT uMsg,
                                         wParam != SIZE_RESTORED);
 
             if (_glfw.win32.disabledCursorWindow == window)
-                updateClipRect(window);
+                disableCursor(window);
+
+            if(_glfw.win32.capturedCursorWindow == window) 
+                captureCursor(window);
 
             if (window->win32.iconified != iconified)
                 _glfwInputWindowIconify(window, iconified);
@@ -1021,7 +1024,10 @@ static LRESULT CALLBACK windowProc(HWND hWnd, UINT uMsg,
         case WM_MOVE:
         {
             if (_glfw.win32.disabledCursorWindow == window)
-                updateClipRect(window);
+                disableCursor(window);
+
+            if(_glfw.win32.capturedCursorWindow == window)
+                captureCursor(window);
 
             // NOTE: This cannot use LOWORD/HIWORD recommended by MSDN, as
             // those macros do not handle negative window positions correctly
